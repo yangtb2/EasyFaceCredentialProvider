@@ -1,0 +1,4 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{EF2D9D52-0C10-4A3D-B447-3CA44E2B1E9B}]
+@="EasyFaceCredentialProvider"

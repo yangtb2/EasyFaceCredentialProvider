@@ -1,0 +1,5 @@
+Windows Registry Editor Version 5.00
+
+[-HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{5fd3d285-0dd9-4362-8855-e0abaacd4af6}]
+[-HKEY_CLASSES_ROOT\CLSID\{EF2D9D52-0C10-4A3D-B447-3CA44E2B1E9B}]
+

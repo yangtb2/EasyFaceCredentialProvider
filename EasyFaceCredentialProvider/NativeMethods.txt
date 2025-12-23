@@ -1,0 +1,13 @@
+﻿ICredentialProvider
+ICredentialProviderSetUserArray
+ICredentialProviderCredential2
+ICredentialProviderCredentialWithFieldOptions
+ICredentialProviderCredentialEvents2
+AllocConsole
+FreeConsole
+CredIsProtectedW
+CredProtectW
+KERB_INTERACTIVE_UNLOCK_LOGON
+LsaConnectUntrusted
+LsaLookupAuthenticationPackage
+LsaDeregisterLogonProcess
