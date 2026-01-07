@@ -38,8 +38,8 @@ Source: ".\Build\*"; Excludes: ".\Build\inno-setup"; DestDir: "{app}"; Flags: ig
 
 [Registry]
 ;Registry data from file register.reg
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{{EF2D9D52-0C10-4A3D-B447-3CA44E2B1E9B}"; Flags: uninsdeletekey
-Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{{EF2D9D52-0C10-4A3D-B447-3CA44E2B1E9B}"; ValueType: string; ValueName: ""; ValueData: "EasyFaceCredentialProvider"; Flags: uninsdeletevalue
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{{EF2D9D52-0C10-4A3D-B447-3CA44E2B1E9B}"; Flags: dontcreatekey uninsdeletekey
+Root: HKLM; Subkey: "SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{{EF2D9D52-0C10-4A3D-B447-3CA44E2B1E9B}"; ValueType: string; ValueName: ""; ValueData: "EasyFaceCredentialProvider"; Flags: dontcreatekey uninsdeletevalue
 ;End of registry data from file register.reg
 
 [Run]
