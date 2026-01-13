@@ -144,4 +144,7 @@
   <data name="FaceRecognizing" xml:space="preserve">
     <value>Face recognizing...</value>
   </data>
+  <data name="ValidataPassword" xml:space="preserve">
+    <value>This operation need your windows login password.</value>
+  </data>
 </root>

@@ -140,5 +140,14 @@ namespace EasyFaceCredentialProvider.Languages {
                 return ResourceManager.GetString("TileImageDescription", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   查找类似 This operation need your windows login password. 的本地化字符串。
+        /// </summary>
+        public static string ValidataPassword {
+            get {
+                return ResourceManager.GetString("ValidataPassword", resourceCulture);
+            }
+        }
     }
 }

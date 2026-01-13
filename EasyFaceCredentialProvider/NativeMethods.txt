@@ -11,3 +11,6 @@ KERB_INTERACTIVE_UNLOCK_LOGON
 LsaConnectUntrusted
 LsaLookupAuthenticationPackage
 LsaDeregisterLogonProcess
+CredUIPromptForWindowsCredentials
+CredPackAuthenticationBuffer
+CredUnPackAuthenticationBuffer

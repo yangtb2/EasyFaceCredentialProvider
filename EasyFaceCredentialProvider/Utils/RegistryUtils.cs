@@ -1,6 +1,6 @@
 ﻿using Microsoft.Win32;
 
-namespace EasyFaceCredentialProvider.Utils;
+namespace EasyFaceCredentialProvider;
 
 internal static class RegistryUtils
 {

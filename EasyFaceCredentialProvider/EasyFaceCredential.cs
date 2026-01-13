@@ -11,7 +11,6 @@ using Windows.Win32.UI.Shell;
 using Accord.Video.DirectShow;
 using EasyFaceCredentialProvider.FieldDefinitions;
 using EasyFaceCredentialProvider.Languages;
-using EasyFaceCredentialProvider.Utils;
 
 namespace EasyFaceCredentialProvider;
 
@@ -29,6 +28,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
     private List<FilterInfo> _cameras = new();
     private string _selectedCamera;
     private bool _selAuthenticate;
+    private bool _isSelected;
 
     public unsafe EasyFaceCredential(ICredentialProviderUser user, CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, Action? credentialChangedCallback)
     {
@@ -269,10 +269,10 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             var splits = _userName.Split('\\');
             var domain = splits[0];
             var name = splits[1];
-            var password = _ProtectIfNecessary(FieldDefinition.Default[(int)FieldIds.Password].Text, _cpus);
-            if (_KerbInteractiveUnlockLogonPack(domain, name, password, _cpus, out var buffer, out var length))
+            var password = CredentialUtils.ProtectStringIfNecessary(FieldDefinition.Default[(int)FieldIds.Password].Text, _cpus);
+            if (CredentialUtils.KerbInteractiveUnlockLogonPack(domain, name, password, _cpus, out var buffer, out var length))
             {
-                if (_RetrieveNegotiateAuthPackage(out var package))
+                if (CredentialUtils.RetrieveNegotiateAuthPackage(out var package))
                 {
                     pcpcs->rgbSerialization = (byte*)buffer;
                     pcpcs->cbSerialization = (uint)length;
@@ -304,178 +304,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         throw new NotImplementedException();
     }
 
-    private string _ProtectIfNecessary(string password, CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus)
-    {
-        if (string.IsNullOrEmpty(password))
-        {
-            return String.Empty;
-        }
-
-        try
-        {
-            var strMem = Marshal.StringToCoTaskMemUni(password);
-            try
-            {
-                if ((PInvoke.CredIsProtected(new PWSTR(strMem), out var type) &&
-                     type is not CRED_PROTECTION_TYPE.CredUnprotected)
-                    || cpus == CREDENTIAL_PROVIDER_USAGE_SCENARIO.CPUS_CREDUI)
-                {
-                    return password;
-                }
-                else
-                {
-                    return _ProtectString(password);
-                }
-            }
-            finally
-            {
-                 Marshal.FreeCoTaskMem(strMem);
-            }
-        }
-        catch (Exception e)
-        {
-            Log.Error(e);
-        }
-        return String.Empty;
-    }
-
-    private string _ProtectString(string password)
-    {
-        try
-        {
-            var strMem = Marshal.StringToCoTaskMemUni(password);
-            try
-            {
-                var result = new Span<char>();
-                uint counts = 0;
-                var pw = new PWSTR(strMem);
-                PInvoke.CredProtect(false, pw, (uint)(pw.Length + 1), result, ref counts);
-                result = new Span<char>(new char[counts]);
-                return PInvoke.CredProtect(false, pw, (uint)(pw.Length + 1), result, ref counts)
-                    ? result.ToString()
-                    : throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-            finally
-            {
-                Marshal.FreeCoTaskMem(strMem);
-            }
-        }
-        catch (Exception e)
-        {
-            Log.Error(e);
-            return string.Empty;
-        }
-    }
-
-    private bool _KerbInteractiveUnlockLogonPack(string domain, string name, string password,
-        CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, out IntPtr buffer, out int length)
-    {
-        buffer = IntPtr.Zero;
-        length = 0;
-        var kiul = new KERB_INTERACTIVE_UNLOCK_LOGON();
-        try
-        {
-            length = Marshal.SizeOf(kiul) + domain.Length * 2 + name.Length * 2 + password.Length * 2;
-            buffer = Marshal.AllocCoTaskMem(length);
-            kiul.Logon.MessageType = cpus switch
-            {
-                CREDENTIAL_PROVIDER_USAGE_SCENARIO.CPUS_UNLOCK_WORKSTATION => KERB_LOGON_SUBMIT_TYPE
-                    .KerbWorkstationUnlockLogon,
-                CREDENTIAL_PROVIDER_USAGE_SCENARIO.CPUS_LOGON => KERB_LOGON_SUBMIT_TYPE.KerbInteractiveLogon,
-                CREDENTIAL_PROVIDER_USAGE_SCENARIO.CPUS_CREDUI => 0,
-                _ => throw new Exception()
-            };
-
-            var offset = Marshal.SizeOf(kiul);
-            kiul.Logon.LogonDomainName = new()
-            {
-                Buffer = new PWSTR(offset),
-                Length = (ushort)(domain.Length * 2),
-                MaximumLength = (ushort)(domain.Length * 2)
-            };
-            Marshal.Copy(domain.ToCharArray(), 0, buffer+offset, domain.Length);
-
-            offset += domain.Length * 2;
-            kiul.Logon.UserName = new()
-            {
-                Buffer = new PWSTR(offset),
-                Length = (ushort)(name.Length * 2),
-                MaximumLength = (ushort)(name.Length * 2)
-            };
-            Marshal.Copy(name.ToCharArray(), 0, buffer + offset, name.Length);
-
-            offset += name.Length * 2;
-            kiul.Logon.Password = new()
-            {
-                Buffer = new PWSTR(offset),
-                Length = (ushort)(password.Length * 2),
-                MaximumLength = (ushort)(password.Length * 2)
-            };
-            Marshal.Copy(password.ToCharArray(), 0, buffer + offset, password.Length);
-            Marshal.StructureToPtr(kiul, buffer, true);
-        }
-        catch (Exception e)
-        {
-            Log.Error(e);
-
-            if (buffer != IntPtr.Zero)
-            {
-                Marshal.FreeCoTaskMem(buffer);
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private bool _RetrieveNegotiateAuthPackage(out uint authPackage)
-    {
-        authPackage = 0;
-        try
-        {
-            if (PInvoke.LsaConnectUntrusted(out var handle).SeverityCode is NTSTATUS.Severity.Success)
-            {
-                IntPtr nameString = IntPtr.Zero;
-                try
-                {
-                    nameString = Marshal.StringToCoTaskMemAnsi(Constants.NEGOSSP_NAME);
-                    var name = new LSA_STRING()
-                    {
-                        Buffer = new PSTR(nameString),
-                        Length = (ushort)(Constants.NEGOSSP_NAME.Length),
-                        MaximumLength = (ushort)(Constants.NEGOSSP_NAME.Length + 1),
-                    };
-                    if (PInvoke.LsaLookupAuthenticationPackage(handle, name, out var package).SeverityCode is NTSTATUS.Severity.Success)
-                    {
-                        authPackage = package;
-                        return true;
-                    }
-                    Marshal.FreeCoTaskMem(nameString);
-                }
-                catch (Exception e)
-                {
-                    Log.Error(e);
-                    if (nameString != IntPtr.Zero)
-                    {
-                        Marshal.FreeCoTaskMem(nameString);
-                    }
-                }
-                finally
-                {
-                    PInvoke.LsaDeregisterLogonProcess(handle);
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            Log.Error(e);
-        }
-
-        return false;
-    }
-
-    private async void _EnableCommand()
+    private unsafe async void _EnableCommand()
     {
         var events2 = _events2;
         var events = _events2 ?? _events;
@@ -485,8 +314,15 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         events?.SetFieldState(this, (uint)FieldIds.Password, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
         events?.SetFieldString(this, (uint)FieldIds.LargeText, new PWSTR(Marshal.StringToCoTaskMemUni(Resource.FaceRecognizing)));
         events2?.EndFieldUpdates();
+
+        CredentialUtils.GetUnPackCredentialFromPrompt(_userName, out var password);
+        
         try
         {
+            //while (_isSelected)
+            //{
+
+            //}
         }
         catch (Exception e)
         {

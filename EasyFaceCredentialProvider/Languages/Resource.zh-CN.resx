@@ -144,4 +144,7 @@
   <data name="FaceRecognizing" xml:space="preserve">
     <value>正在识别人脸...</value>
   </data>
+  <data name="ValidataPassword" xml:space="preserve">
+    <value>操作前请先验证您的Windows登录密码</value>
+  </data>
 </root>
