@@ -12,6 +12,8 @@ internal static class Constants
 
     public const string RegVal_FaceData = "FaceData";
 
+    public const string RegVal_Password = "00";
+
     public static readonly string RegistryPath = Path.Combine(
         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers",
         Guid.Parse(Constants.ProviderGuid).ToString("B"));

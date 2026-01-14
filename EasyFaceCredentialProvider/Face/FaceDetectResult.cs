@@ -7,9 +7,9 @@ public enum FaceDetectResultType
     Spoofed,
 }
 
-public record FaceDetectResult(FaceDetectResultType ResultType, float Similarity, float[]? Data)
+public record FaceDetectResult(FaceDetectResultType ResultType, float[]? Data)
 {
-    public static FaceDetectResult Success(float similarity, float[] data) => new(FaceDetectResultType.Success, similarity, data);
-    public static FaceDetectResult NoFace() => new(FaceDetectResultType.NoFace, 0, null);
-    public static FaceDetectResult Spoofed() => new(FaceDetectResultType.Spoofed, 0, null);
+    public static FaceDetectResult Success(float[] data) => new(FaceDetectResultType.Success, data);
+    public static FaceDetectResult NoFace() => new(FaceDetectResultType.NoFace, null);
+    public static FaceDetectResult Spoofed() => new(FaceDetectResultType.Spoofed, null);
 }

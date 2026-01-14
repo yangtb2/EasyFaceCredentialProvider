@@ -5,12 +5,15 @@ using System.Runtime.InteropServices;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
+using Windows.Win32.Security;
 using Windows.Win32.Security.Authentication.Identity;
 using Windows.Win32.Security.Credentials;
 using Windows.Win32.UI.Shell;
 using Accord.Video.DirectShow;
 using EasyFaceCredentialProvider.FieldDefinitions;
 using EasyFaceCredentialProvider.Languages;
+using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
 
 namespace EasyFaceCredentialProvider;
 
@@ -306,17 +309,46 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
 
     private unsafe async void _EnableCommand()
     {
-        var events2 = _events2;
-        var events = _events2 ?? _events;
-        events2?.BeginFieldUpdates();
-        events?.SetFieldState(this, (uint)FieldIds.EnableCommandLink, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
-        events?.SetFieldState(this, (uint)FieldIds.SubmitButton, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
-        events?.SetFieldState(this, (uint)FieldIds.Password, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
-        events?.SetFieldString(this, (uint)FieldIds.LargeText, new PWSTR(Marshal.StringToCoTaskMemUni(Resource.FaceRecognizing)));
-        events2?.EndFieldUpdates();
+        _SetUIforEnableCommand();
 
-        CredentialUtils.GetUnPackCredentialFromPrompt(_userName, out var password);
-        
+        uint lastError = 0;
+        while (true)
+        {
+            lastError = CredentialUtils.GetUnPackCredentialFromPrompt(_userName, lastError, out var buffer,
+                out var size);
+            if (0 == lastError)
+            {
+                if (CredentialUtils.GetUnpackCredentialString(buffer, size, out string userName, out string domain,
+                        out var password))
+                {
+                    if (string.IsNullOrEmpty(domain))
+                    {
+                        var splits = userName.Split('\\');
+                        domain = splits[0];
+                        userName = splits[1];
+                    }
+                    if (PInvoke.LogonUser(userName, domain, password, LOGON32_LOGON.LOGON32_LOGON_NETWORK,
+                            LOGON32_PROVIDER.LOGON32_PROVIDER_DEFAULT, out var token))
+                    {
+                        token.Close();
+                        RegistryUtils.WriteRegistryValue(Path.Combine(Constants.RegistryPath, _userSid),
+                            Constants.RegVal_Password, password, RegistryValueKind.String);
+                        break;
+                    }
+                }
+
+                lastError = (uint)Marshal.GetLastPInvokeError();
+            }
+            else
+            {
+                if (lastError == 1223) //cancelled
+                {
+                    _SetUIforDefault();
+                    return;
+                }
+            }
+        }
+
         try
         {
             //while (_isSelected)
@@ -328,6 +360,31 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         {
             Log.Error(e);
         }
+    }
+
+    private void _SetUIforDefault()
+    {
+        var events2 = _events2;
+        var events = _events2 ?? _events;
+        events2?.BeginFieldUpdates();
+        events?.SetFieldState(this, (uint)FieldIds.EnableCommandLink, FieldDefinition.Default[(int)FieldIds.EnableCommandLink].State);
+        events?.SetFieldState(this, (uint)FieldIds.SubmitButton, FieldDefinition.Default[(int)FieldIds.SubmitButton].State);
+        events?.SetFieldState(this, (uint)FieldIds.Password, FieldDefinition.Default[(int)FieldIds.Password].State);
+        events?.SetFieldString(this, (uint)FieldIds.LargeText, new PWSTR(Marshal.StringToCoTaskMemUni(FieldDefinition.Default[(int)FieldIds.LargeText].Text)));
+        events2?.EndFieldUpdates();
+
+    }
+
+    private void _SetUIforEnableCommand()
+    {
+        var events2 = _events2;
+        var events = _events2 ?? _events;
+        events2?.BeginFieldUpdates();
+        events?.SetFieldState(this, (uint)FieldIds.EnableCommandLink, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
+        events?.SetFieldState(this, (uint)FieldIds.SubmitButton, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
+        events?.SetFieldState(this, (uint)FieldIds.Password, CREDENTIAL_PROVIDER_FIELD_STATE.CPFS_HIDDEN);
+        events?.SetFieldString(this, (uint)FieldIds.LargeText, new PWSTR(Marshal.StringToCoTaskMemUni(Resource.FaceRecognizing)));
+        events2?.EndFieldUpdates();
     }
 
     private void _DisableCommand()

@@ -11,7 +11,7 @@ namespace EasyFaceCredentialProvider;
 
 public static class CredentialUtils
 {
-    public static unsafe bool GetUnPackCredentialFromPrompt(string userName, out void* buffer, out uint size)
+    public static unsafe uint GetUnPackCredentialFromPrompt(string userName, uint lastError, out void* buffer, out uint size)
     {
         uint inCredSize = 1024;
         IntPtr inCredBuffer = IntPtr.Zero;
@@ -27,14 +27,12 @@ public static class CredentialUtils
                     (byte*)inCredBuffer,
                     &inCredSize))
             {
-                Log.Info(
-                    $"CredPackAuthenticationBuffer failed, {Marshal.GetLastPInvokeError()}:{Marshal.GetLastPInvokeErrorMessage()}");
-                return false;
+                return (uint)Marshal.GetLastPInvokeError();
             }
 
             if (!RetrieveNegotiateAuthPackage(out var packageId))
             {
-                return false;
+                return (uint)Marshal.GetLastPInvokeError();
             }
 
             tipString = Marshal.StringToCoTaskMemUni(Resource.ValidataPassword);
@@ -46,25 +44,19 @@ public static class CredentialUtils
             };
             var hr = PInvoke.CredUIPromptForWindowsCredentials(
                 credUiInfo,
-                0,
+                lastError,
                 ref packageId,
                 new ReadOnlySpan<byte>((void*)inCredBuffer, (int)inCredSize),
                 out buffer,
                 out size,
                 CREDUIWIN_FLAGS.CREDUIWIN_GENERIC);
 
-            if (hr != 0)
-            {
-                Log.Info($"CredUIPromptForWindowsCredentials failed, {hr}");
-                return false;
-            }
-
-            return true;
+            return hr;
         }
         catch (Exception e)
         {
             Log.Error(e);
-            return false;
+            return (uint)Marshal.GetLastPInvokeError();
         }
         finally
         {
@@ -102,15 +94,10 @@ public static class CredentialUtils
             if (!PInvoke.CredUnPackAuthenticationBuffer(
                     CRED_PACK_FLAGS.CRED_PACK_GENERIC_CREDENTIALS,
                     new ReadOnlySpan<byte>(buffer, (int)size),
-                    sc1,
-                    ref maxUserName,
-                    sc2,
-                    ref maxDomainName,
-                    sc3,
-                    ref maxPassword))
+                    sc1, ref maxUserName,
+                    sc2, ref maxDomainName,
+                    sc3, ref maxPassword))
             {
-                Log.Info(
-                    $"CredUnPackAuthenticationBuffer failed, {Marshal.GetLastPInvokeError()}:{Marshal.GetLastPInvokeErrorMessage()}");
                 return false;
             }
             userName = sc1[..(int)maxUserName].ToString();
