@@ -1,66 +1,74 @@
-﻿using Accord.Video.DirectShow;
-using System.Text;
+﻿using System.Drawing;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using ViewFaceCore;
 using ViewFaceCore.Configs;
 using ViewFaceCore.Core;
 using ViewFaceCore.Model;
+using Windows.Devices.Enumeration;
+using Windows.Media.Capture;
+using Windows.Media.MediaProperties;
+using Windows.Storage.Streams;
 
 namespace EasyFaceCredentialProvider;
 
-public class FaceAuth
+public class FaceAuth : IDisposable
 {
     private readonly FaceDetector _faceDetector;
     private readonly FaceAntiSpoofing _faceAntiSpoofing;
     private readonly FaceRecognizer _recognizer;
     private readonly FaceLandmarker _faceLandmarker;
-    private readonly VideoCaptureDevice _camera;
-    private readonly SemaphoreSlim _slim = new(0, 1);
-    private FaceDetectResult _result;
+    private readonly MediaCaptureInitializationSettings _cameraSettings = new();
 
-    public FaceAuth(string cameraMonikerString)
+    public FaceAuth(string cameraId)
     {
         _faceDetector = new();
         _faceAntiSpoofing = new(new FaceAntiSpoofingConfig() { Global = true });
         _recognizer = new(new FaceRecognizeConfig(FaceType.Normal));
         _faceLandmarker = new();
-        _camera = new VideoCaptureDevice(cameraMonikerString);
-        _camera.NewFrame += _camera_NewFrame;
+        _cameraSettings.StreamingCaptureMode = StreamingCaptureMode.Video;
+        _cameraSettings.VideoDeviceId = cameraId;
     }
 
-    private void _camera_NewFrame(object sender, Accord.Video.NewFrameEventArgs eventArgs)
+    private FaceDetectResult _ImageAnalysis(Image image)
     {
-        var faceImage = eventArgs.Frame.ToFaceImage();
-
+        var faceImage = image.ToFaceImage();
         var faces = _faceDetector.Detect(faceImage);
-        if (faces.Length == 0)
+        if (!faces.Any())
         {
-            Log.Info("未检测到人脸");
-            _result = FaceDetectResult.NoFace();
-            return;
+            Log.Info("检测不到人脸");
+            return new FaceDetectResult(AntiSpoofingStatus.Error, null);
         }
-
         var points = _faceLandmarker.Mark(faceImage, faces[0]);
         var fasRes = _faceAntiSpoofing.AntiSpoofingVideo(faceImage, faces[0], points);
         Log.Info($"活体检测结果为{fasRes.Status}");
-        if (fasRes.Status is AntiSpoofingStatus.Spoof)
-        {
-            Log.Info("非活体攻击");
-            _result = FaceDetectResult.Spoofed();
-            _slim.Release();
-        }
 
+        float[]? recRes = null;
         if (fasRes.Status is AntiSpoofingStatus.Real)
         {
-            var recRes = _recognizer.Extract(faceImage, points);
+            Log.Info("识别成功");
+            recRes = _recognizer.Extract(faceImage, points);
             using var memoryStream = new MemoryStream();
-            _result = FaceDetectResult.Success(recRes);
-            _slim.Release();
+        }
+
+        return new FaceDetectResult(fasRes.Status, recRes);
+    }
+
+    public async IAsyncEnumerable<FaceDetectResult> StartDetect([EnumeratorCancellation] CancellationToken token)
+    {
+        var videos = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
+        _cameraSettings.VideoDeviceId = videos[1].Id;
+        var camera = new MediaCapture();
+        await camera.InitializeAsync(_cameraSettings);
+        while (token is not {IsCancellationRequested:true})
+        {
+            IRandomAccessStream stream = new InMemoryRandomAccessStream();
+            await camera.CapturePhotoToStreamAsync(ImageEncodingProperties.CreateBmp(), stream);
+            yield return _ImageAnalysis(Image.FromStream(stream.AsStream()));
         }
     }
 
-    public void StartDetect()
+    public void Dispose()
     {
-        _camera.Start();
-        _slim.Wait();
     }
 }

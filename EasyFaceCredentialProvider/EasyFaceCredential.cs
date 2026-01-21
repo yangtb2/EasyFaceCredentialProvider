@@ -1,19 +1,17 @@
-﻿using System.ComponentModel;
+﻿using EasyFaceCredentialProvider.FieldDefinitions;
+using EasyFaceCredentialProvider.Languages;
+using Microsoft.Win32;
 using System.Drawing;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
+using ViewFaceCore.Model;
+using Windows.Devices.Enumeration;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.Graphics.Gdi;
 using Windows.Win32.Security;
-using Windows.Win32.Security.Authentication.Identity;
-using Windows.Win32.Security.Credentials;
 using Windows.Win32.UI.Shell;
-using Accord.Video.DirectShow;
-using EasyFaceCredentialProvider.FieldDefinitions;
-using EasyFaceCredentialProvider.Languages;
-using Microsoft.Win32;
-using Microsoft.Win32.SafeHandles;
 
 namespace EasyFaceCredentialProvider;
 
@@ -28,7 +26,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
     private bool _faceEnable;
     private byte[] _faceData;
     private readonly string _userName;
-    private List<FilterInfo> _cameras = new();
+    private DeviceInformationCollection _cameras;
     private string _selectedCamera;
     private bool _selAuthenticate;
     private bool _isSelected;
@@ -38,7 +36,6 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         _user = user;
         _cpus = cpus;
         _credentialChangedCallback = credentialChangedCallback;
-
         var sid = new PWSTR();
         _user.GetSid(&sid);
         _userSid = sid.ToString();
@@ -56,17 +53,8 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             string.Empty;
 
         var registryPath = Path.Combine(Constants.RegistryPath, _userSid);
-        _faceEnable = (RegistryUtils.ReadRegistryValue(registryPath, Constants.RegVal_FaceEnable) as bool?) ?? false;
+        _faceEnable = RegistryUtils.ReadRegistryValue(registryPath, Constants.RegVal_FaceEnable) is > 0;
         _faceData = (RegistryUtils.ReadRegistryValue(registryPath, Constants.RegVal_FaceData) as byte[]) ?? [];
-
-        try
-        {
-            _cameras = new FilterInfoCollection(FilterCategory.VideoInputDevice).ToList();
-        }
-        catch (Exception e)
-        {
-            Log.Error(e);
-        }
 
         var field = FieldDefinition.Default[(uint)FieldIds.CameraSelector];
         field.State = _faceEnable
@@ -117,6 +105,52 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
 
     public unsafe void SetSelected(BOOL* pbAutoLogon)
     {
+        if (_faceEnable && _faceData is not null)
+        {
+            try
+            {
+                if (FaceDetectAsync().Result)
+                {
+                    Log.Info("识别结束");
+                    var pw = RegistryUtils.ReadRegistryValue(Path.Combine(Constants.RegistryPath, _userSid), Constants.RegVal_Password);
+                    if (pw is string password)
+                    {
+                        Log.Info(password);
+                        _events?.SetFieldString(this, (uint)FieldIds.Password, new PWSTR(Marshal.StringToCoTaskMemUni(password)));
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+                _SetUIforDefault();
+            }
+        }
+    }
+
+    private async Task<bool> FaceDetectAsync()
+    {
+        using var faceAuth = new FaceAuth(_selectedCamera);
+        await foreach (var result in faceAuth.StartDetect(CancellationToken.None))
+        {
+            Log.Info(result.Status.ToString());
+            if (result.Status is AntiSpoofingStatus.Real && result.Data is not null)
+            {
+                using var memoryStream = new MemoryStream();
+                await using var bin = new BinaryWriter(memoryStream, Encoding.Unicode);
+                foreach (var data in result.Data)
+                {
+                    bin.Write(BitConverter.GetBytes(data));
+                }
+                var regKey = Path.Combine(Constants.RegistryPath, _userSid);
+                RegistryUtils.WriteRegistryValue(regKey, Constants.RegVal_FaceData, memoryStream.ToArray(),
+                    RegistryValueKind.Binary);
+                RegistryUtils.WriteRegistryValue(regKey, Constants.RegVal_FaceEnable, 1, RegistryValueKind.DWord);
+                return true;
+            }
+
+        }
+        return false;
     }
 
     public void SetDeselected()
@@ -179,6 +213,19 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             throw new NotImplementedException();
         }
 
+        pcItems = 0;
+        pdwSelectedItem = 0;
+        return;
+
+        try
+        {
+            _cameras = DeviceInformation.FindAllAsync(DeviceClass.VideoCapture).GetResults();
+        }
+        catch (Exception e)
+        {
+            Log.Error(e);
+        }
+
         if (!_cameras.Any())
         {
             pcItems = 1;
@@ -191,8 +238,8 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         var selected = RegistryUtils.ReadRegistryValue(Constants.RegistryPath, Constants.RegVal_SelectedCamera) as string;
         if (!string.IsNullOrEmpty(selected))
         {
-            var index = _cameras.FindIndex(c =>
-                c.MonikerString.Equals(selected, StringComparison.InvariantCultureIgnoreCase));
+            var index = _cameras.ToList().FindIndex(c =>
+                c.Id.Equals(selected, StringComparison.InvariantCultureIgnoreCase));
             pdwSelectedItem = (uint)Math.Max(0, index);
         }
     }
@@ -236,7 +283,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
 
         if (dwSelectedItem < _cameras.Count)
         {
-            _selectedCamera = _cameras[(int)dwSelectedItem].MonikerString;
+            _selectedCamera = _cameras[(int)dwSelectedItem].Id;
             RegistryUtils.WriteRegistryValue(Constants.RegistryPath, Constants.RegVal_SelectedCamera, _selectedCamera);
         }
         else if(dwSelectedItem == _cameras.Count)
@@ -245,12 +292,12 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         }
     }
 
-    public void CommandLinkClicked(uint dwFieldID)
+    public async void CommandLinkClicked(uint dwFieldID)
     {
         switch ((FieldIds)dwFieldID)
         {
             case FieldIds.EnableCommandLink:
-                _EnableCommand();
+                await _EnableCommand();
                 break;
             case FieldIds.DisableCommandLink:
                 _DisableCommand();
@@ -307,58 +354,79 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         throw new NotImplementedException();
     }
 
-    private unsafe async void _EnableCommand()
+    private async Task _EnableCommand()
     {
         _SetUIforEnableCommand();
 
         uint lastError = 0;
         while (true)
         {
-            lastError = CredentialUtils.GetUnPackCredentialFromPrompt(_userName, lastError, out var buffer,
-                out var size);
-            if (0 == lastError)
+            unsafe
             {
-                if (CredentialUtils.GetUnpackCredentialString(buffer, size, out string userName, out string domain,
-                        out var password))
+                lastError = CredentialUtils.GetUnPackCredentialFromPrompt(_userName, lastError, out var buffer,
+                    out var size);
+                if (0 == lastError)
                 {
-                    if (string.IsNullOrEmpty(domain))
+                    if (CredentialUtils.GetUnpackCredentialString(buffer, size, out string userName, out string domain,
+                            out var password))
                     {
-                        var splits = userName.Split('\\');
-                        domain = splits[0];
-                        userName = splits[1];
+                        if (string.IsNullOrEmpty(domain))
+                        {
+                            var splits = userName.Split('\\');
+                            domain = splits[0];
+                            userName = splits[1];
+                        }
+                        if (PInvoke.LogonUser(userName, domain, password, LOGON32_LOGON.LOGON32_LOGON_NETWORK,
+                                LOGON32_PROVIDER.LOGON32_PROVIDER_DEFAULT, out var token))
+                        {
+                            token.Close();
+                            RegistryUtils.WriteRegistryValue(Path.Combine(Constants.RegistryPath, _userSid),
+                                Constants.RegVal_Password, password, RegistryValueKind.String);
+                            break;
+                        }
                     }
-                    if (PInvoke.LogonUser(userName, domain, password, LOGON32_LOGON.LOGON32_LOGON_NETWORK,
-                            LOGON32_PROVIDER.LOGON32_PROVIDER_DEFAULT, out var token))
-                    {
-                        token.Close();
-                        RegistryUtils.WriteRegistryValue(Path.Combine(Constants.RegistryPath, _userSid),
-                            Constants.RegVal_Password, password, RegistryValueKind.String);
-                        break;
-                    }
-                }
 
-                lastError = (uint)Marshal.GetLastPInvokeError();
-            }
-            else
-            {
-                if (lastError == 1223) //cancelled
+                    lastError = (uint)Marshal.GetLastPInvokeError();
+                }
+                else
                 {
-                    _SetUIforDefault();
-                    return;
+                    if (lastError == 1223) //cancelled
+                    {
+                        _SetUIforDefault();
+                        return;
+                    }
                 }
             }
         }
 
         try
         {
-            //while (_isSelected)
-            //{
-
-            //}
+            using var faceAuth = new FaceAuth(_selectedCamera);
+            await foreach (var result in faceAuth.StartDetect(CancellationToken.None))
+            {
+                Log.Info(result.Status.ToString());
+                if (result.Status is AntiSpoofingStatus.Real && result.Data is not null)
+                {
+                    using var memoryStream = new MemoryStream();
+                    await using var bin = new BinaryWriter(memoryStream, Encoding.Unicode);
+                    foreach (var data in result.Data)
+                    {
+                        bin.Write(BitConverter.GetBytes(data));
+                    }
+                    var regKey = Path.Combine(Constants.RegistryPath, _userSid);
+                    RegistryUtils.WriteRegistryValue(regKey, Constants.RegVal_FaceData, memoryStream.ToArray(),
+                        RegistryValueKind.Binary);
+                    RegistryUtils.WriteRegistryValue(regKey, Constants.RegVal_FaceEnable, 1, RegistryValueKind.DWord);
+                    break;
+                }
+            }
+            _credentialChangedCallback?.Invoke();
+            Log.Info("识别结束");
         }
         catch (Exception e)
         {
             Log.Error(e);
+            _SetUIforDefault();
         }
     }
 
