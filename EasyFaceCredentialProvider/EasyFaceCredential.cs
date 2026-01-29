@@ -19,10 +19,11 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
 {
     private ICredentialProviderCredentialEvents? _events;
     private ICredentialProviderCredentialEvents2? _events2;
-    private Action? _credentialChangedCallback;
+    private Action<uint, bool>? _credentialChangedCallback;
     private readonly ICredentialProviderUser _user;
     private readonly CREDENTIAL_PROVIDER_USAGE_SCENARIO _cpus;
     private readonly string _userSid;
+    private readonly uint _index;
     private bool _faceEnable;
     private byte[] _faceData;
     private readonly string _userName;
@@ -31,8 +32,9 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
     private bool _selAuthenticate;
     private bool _isSelected;
 
-    public unsafe EasyFaceCredential(ICredentialProviderUser user, CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, Action? credentialChangedCallback)
+    public unsafe EasyFaceCredential(uint index, ICredentialProviderUser user, CREDENTIAL_PROVIDER_USAGE_SCENARIO cpus, Action<uint, bool>? credentialChangedCallback)
     {
+        _index = index;
         _user = user;
         _cpus = cpus;
         _credentialChangedCallback = credentialChangedCallback;
@@ -117,6 +119,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
                     {
                         Log.Info(password);
                         _events?.SetFieldString(this, (uint)FieldIds.Password, new PWSTR(Marshal.StringToCoTaskMemUni(password)));
+                        _credentialChangedCallback?.Invoke(_index, true);
                     }
                 }
             }
@@ -294,7 +297,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             try
             {
                 _cameras = Task.Run(async () => await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)).GetAwaiter().GetResult();
-                _credentialChangedCallback?.Invoke();
+                _credentialChangedCallback?.Invoke(_index, false);
             }
             catch (Exception e)
             {
@@ -431,7 +434,7 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
                     break;
                 }
             }
-            _credentialChangedCallback?.Invoke();
+            _credentialChangedCallback?.Invoke(_index, false);
             Log.Info("识别结束");
         }
         catch (Exception e)

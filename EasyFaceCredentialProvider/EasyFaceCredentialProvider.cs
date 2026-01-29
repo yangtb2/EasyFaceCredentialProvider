@@ -17,6 +17,8 @@ public class EasyFaceCredentialProvider : ICredentialProvider, ICredentialProvid
     private ICredentialProviderEvents? _advise;
     private UIntPtr _adviseContext;
     private bool _recreateCredentials;
+    private bool _autoLogon;
+    private uint _defaultCredential;
 
     public EasyFaceCredentialProvider()
     {
@@ -102,6 +104,12 @@ public class EasyFaceCredentialProvider : ICredentialProvider, ICredentialProvid
             _EnumCredentials();
         }
         pdwCount = (uint)_credentials.Count;
+        if (_autoLogon)
+        {
+            pdwDefault = _defaultCredential;
+            *pbAutoLogonWithDefault = true;
+            _autoLogon = false;
+        }
     }
 
     public void GetCredentialAt(uint dwIndex, out ICredentialProviderCredential ppcpc)
@@ -128,7 +136,7 @@ public class EasyFaceCredentialProvider : ICredentialProvider, ICredentialProvid
             try
             {
                 _userArray.GetAt(i, out var user);
-                var credential = new EasyFaceCredential(user, _cpus, CredentialChangedCallback);
+                var credential = new EasyFaceCredential(i, user, _cpus, CredentialChangedCallback);
                 _credentials.Add(credential);
             }
             catch (Exception e)
@@ -138,8 +146,10 @@ public class EasyFaceCredentialProvider : ICredentialProvider, ICredentialProvid
         }
     }
 
-    private void CredentialChangedCallback()
+    private void CredentialChangedCallback(uint index, bool autoLogon)
     {
         _advise?.CredentialsChanged(_adviseContext);
+        _autoLogon = autoLogon;
+        _defaultCredential = index;
     }
 }
