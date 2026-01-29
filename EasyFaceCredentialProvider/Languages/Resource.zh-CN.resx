@@ -147,4 +147,7 @@
   <data name="ValidataPassword" xml:space="preserve">
     <value>操作前请先验证您的Windows登录密码</value>
   </data>
+  <data name="NoCameraAvailable" xml:space="preserve">
+    <value>无可用摄像头</value>
+  </data>
 </root>

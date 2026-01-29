@@ -147,4 +147,7 @@
   <data name="ValidataPassword" xml:space="preserve">
     <value>This operation need your windows login password.</value>
   </data>
+  <data name="NoCameraAvailable" xml:space="preserve">
+    <value>No camera available</value>
+  </data>
 </root>

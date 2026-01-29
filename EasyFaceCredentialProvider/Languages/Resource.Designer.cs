@@ -106,6 +106,15 @@ namespace EasyFaceCredentialProvider.Languages {
         }
         
         /// <summary>
+        ///   查找类似 No camera available 的本地化字符串。
+        /// </summary>
+        public static string NoCameraAvailable {
+            get {
+                return ResourceManager.GetString("NoCameraAvailable", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   查找类似 Password 的本地化字符串。
         /// </summary>
         public static string PasswordTips {

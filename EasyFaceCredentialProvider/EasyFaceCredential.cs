@@ -213,20 +213,16 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             throw new NotImplementedException();
         }
 
-        pcItems = 0;
-        pdwSelectedItem = 0;
-        return;
-
         try
         {
-            _cameras = DeviceInformation.FindAllAsync(DeviceClass.VideoCapture).GetResults();
+            _cameras = Task.Run(async () => await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)).GetAwaiter().GetResult();
         }
         catch (Exception e)
         {
             Log.Error(e);
         }
 
-        if (!_cameras.Any())
+        if (_cameras == null || !_cameras.Any())
         {
             pcItems = 1;
             pdwSelectedItem = 0;
@@ -240,7 +236,10 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
         {
             var index = _cameras.ToList().FindIndex(c =>
                 c.Id.Equals(selected, StringComparison.InvariantCultureIgnoreCase));
-            pdwSelectedItem = (uint)Math.Max(0, index);
+            if (index >= 0)
+            {
+                pdwSelectedItem = (uint)index;
+            }
         }
     }
 
@@ -251,7 +250,11 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             throw new NotImplementedException();
         }
 
-        if (dwItem < _cameras.Count)
+        if (!_cameras.Any())
+        {
+            *ppszItem = new PWSTR(Marshal.StringToCoTaskMemUni(Resource.NoCameraAvailable));
+        }
+        else if (dwItem < _cameras.Count)
         {
             *ppszItem = new PWSTR(Marshal.StringToCoTaskMemUni($"{Resource.Camera}{dwItem:D}: {_cameras[(int)dwItem].Name}"));
         }
@@ -286,9 +289,17 @@ public class EasyFaceCredential : ICredentialProviderCredential2, ICredentialPro
             _selectedCamera = _cameras[(int)dwSelectedItem].Id;
             RegistryUtils.WriteRegistryValue(Constants.RegistryPath, Constants.RegVal_SelectedCamera, _selectedCamera);
         }
-        else if(dwSelectedItem == _cameras.Count)
+        else if (dwSelectedItem == _cameras.Count)
         {
-            _credentialChangedCallback?.Invoke();
+            try
+            {
+                _cameras = Task.Run(async () => await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)).GetAwaiter().GetResult();
+                _credentialChangedCallback?.Invoke();
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+            }
         }
     }
 

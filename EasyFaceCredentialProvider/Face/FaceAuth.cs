@@ -56,8 +56,6 @@ public class FaceAuth : IDisposable
 
     public async IAsyncEnumerable<FaceDetectResult> StartDetect([EnumeratorCancellation] CancellationToken token)
     {
-        var videos = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture);
-        _cameraSettings.VideoDeviceId = videos[1].Id;
         var camera = new MediaCapture();
         await camera.InitializeAsync(_cameraSettings);
         while (token is not {IsCancellationRequested:true})
